@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { Navigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../contexts/AuthContext';
-import { Calendar, MapPin, Users, Plus, X, Trash2, MapPinned } from 'lucide-react';
+import { Calendar, MapPin, Users, Plus, X, Trash2, MapPinned, Mail } from 'lucide-react';
 import L from 'leaflet';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, arrayUnion, arrayRemove, query, where, getDocs, writeBatch } from 'firebase/firestore';
@@ -25,6 +26,11 @@ const Events = () => {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [userMap, setUserMap] = useState({});
 
+    // Auth Guard
+    if (!currentUser) {
+        return <Navigate to="/login" />;
+    }
+
     // Form State
     const [newEvent, setNewEvent] = useState({
         title: '',
@@ -35,13 +41,16 @@ const Events = () => {
         locations: [{ name: '', coordinates: [49.2827, -123.1207] }]
     });
 
-    // 1. Fetch User Names for RSVP Display
+    // 1. Fetch User Profiles for RSVP Display & Emails
     useEffect(() => {
         const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
             const map = {};
             snapshot.docs.forEach(doc => {
                 const data = doc.data();
-                map[doc.id] = data.displayName || data.email;
+                map[doc.id] = {
+                    name: data.displayName || data.email,
+                    email: data.email
+                };
             });
             setUserMap(map);
         });
@@ -109,7 +118,7 @@ const Events = () => {
                 date: newEvent.date,
                 description: newEvent.description,
                 expiryDate: expiry,
-                locations: validLocations, // Save array
+                locations: validLocations,
                 attendees: [],
                 createdBy: currentUser.uid
             });
@@ -148,6 +157,32 @@ const Events = () => {
         } catch (error) {
             console.error("Error updating RSVP:", error);
         }
+    };
+
+    const handleSendReminder = (event) => {
+        if (!event.attendees || event.attendees.length === 0) {
+            alert("No attendees to remind.");
+            return;
+        }
+
+        const bccEmails = event.attendees
+            .map(uid => userMap[uid]?.email)
+            .filter(email => email) // Filter out undefined
+            .join(',');
+
+        if (!bccEmails) {
+            alert("Could not find emails for attendees.");
+            return;
+        }
+
+        const subject = encodeURIComponent(`Reminder: ${event.title}`);
+        const locationText = event.locations && event.locations.length > 0
+            ? event.locations.map(l => l.name).join(', ')
+            : event.location;
+
+        const body = encodeURIComponent(`Hi everyone,\n\nThis is a friendly reminder about our upcoming event: ${event.title}\nDate: ${new Date(event.date).toLocaleString()}\nLocation: ${locationText}\n\nSee you there!`);
+
+        window.location.href = `mailto:?bcc=${bccEmails}&subject=${subject}&body=${body}`;
     };
 
     // Location Management in Form
@@ -209,11 +244,22 @@ const Events = () => {
                             <div className="event-details">
                                 <div className="event-header">
                                     <h2>{event.title}</h2>
-                                    {isAdmin && (
-                                        <button className="btn-icon-danger" onClick={() => handleDeleteEvent(event.id)}>
-                                            <Trash2 size={16} />
-                                        </button>
-                                    )}
+                                    <div className="header-actions">
+                                        {isAdmin && (event.attendees || []).length > 0 && (
+                                            <button
+                                                className="btn-icon-primary"
+                                                onClick={() => handleSendReminder(event)}
+                                                title="Send Reminder Email to Attendees"
+                                            >
+                                                <Mail size={18} />
+                                            </button>
+                                        )}
+                                        {isAdmin && (
+                                            <button className="btn-icon-danger" onClick={() => handleDeleteEvent(event.id)}>
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
 
                                 <div className="event-info">
@@ -243,8 +289,8 @@ const Events = () => {
                                     <span className="attendees-label">Who's going:</span>
                                     <div className="avatars">
                                         {(event.attendees || []).map(uid => (
-                                            <span key={uid} className="attendee-name" title={userMap[uid]}>
-                                                {userMap[uid] || 'Unknown'}
+                                            <span key={uid} className="attendee-name" title={userMap[uid]?.name}>
+                                                {userMap[uid]?.name || 'Unknown'}
                                             </span>
                                         ))}
                                         {(event.attendees || []).length === 0 && <span className="no-attendees">Be the first to join!</span>}
@@ -400,6 +446,11 @@ const Events = () => {
             align-items: start;
             margin-bottom: 0.5rem;
         }
+        
+        .header-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
 
         .event-info {
           display: flex;
@@ -492,6 +543,22 @@ const Events = () => {
             background: #fee2e2;
             border-radius: 4px;
         }
+        
+        .btn-icon-primary {
+            color: var(--color-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-icon-primary:hover {
+            background: #eff6ff;
+            border-radius: 4px;
+        }
+
 
         .modal-overlay {
             position: fixed;
@@ -534,7 +601,7 @@ const Events = () => {
             border: 1px solid #e5e7eb;
             border-radius: 6px;
         }
-
+        
         .locations-input-list {
             display: flex;
             flex-direction: column;
@@ -546,7 +613,7 @@ const Events = () => {
             align-items: center;
             gap: 0.5rem;
         }
-        
+
         .help-text {
             font-size: 0.75rem;
             color: var(--text-muted);

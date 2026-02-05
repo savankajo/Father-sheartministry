@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
-import { collection, addDoc, query, where, orderBy, onSnapshot, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, query, where, orderBy, onSnapshot, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { MessageSquare, Send, Plus, Users, Hash } from 'lucide-react';
 
 const Teams = () => {
@@ -14,8 +15,16 @@ const Teams = () => {
 
   const messagesEndRef = useRef(null);
 
+  // Auth Guard
+  if (!currentUser) {
+    return <Navigate to="/login" />;
+  }
+
   // 1. Fetch My Teams (from user profile) so we know what I can see
   useEffect(() => {
+    // Safety check mostly for development, though caught by Auth Guard above
+    if (!currentUser) return;
+
     const unsubscribe = onSnapshot(doc(db, "users", currentUser.uid), (doc) => {
       if (doc.exists()) {
         const myTeams = doc.data().teams || [];
@@ -33,7 +42,7 @@ const Teams = () => {
       }
     });
     return () => unsubscribe();
-  }, [currentUser.uid]);
+  }, [currentUser]);
 
   // 2. Auto-Cleanup Old Messages (> 48h)
   useEffect(() => {
@@ -103,21 +112,19 @@ const Teams = () => {
   };
 
   return (
-    <div className="animate-fade-in chat-layout">
+    <div className="teams-layout animate-fade-in">
       {/* Sidebar */}
-      <div className="teams-sidebar card">
+      <div className="teams-sidebar">
         <div className="sidebar-header">
-          <h2>My Teams</h2>
-          {isAdmin && (
-            <button className="btn-icon-sm" title="Manage Teams in Admin Dashboard">
-              <Plus size={20} />
-            </button>
-          )}
+          <h2>Teams</h2>
+          {/* Admin could add teams here, but handled in Admin panel for now */}
         </div>
 
-        <div className="teams-list">
+        <div className="team-list">
           {teams.length === 0 ? (
-            <p className="no-teams-msg">You are not in any teams yet.</p>
+            <div className="empty-teams">
+              <p>You haven't been added to any teams yet.</p>
+            </div>
           ) : (
             teams.map(team => (
               <div
@@ -134,258 +141,232 @@ const Teams = () => {
       </div>
 
       {/* Chat Area */}
-      <div className="chat-area card">
+      <div className="chat-area">
         {activeTeam ? (
           <>
             <div className="chat-header">
-              <h3>{activeTeam.name}</h3>
-              <span className="member-count">Messages expire in 48h</span>
+              <div className="header-info">
+                <Hash size={20} />
+                <h3>{activeTeam.name}</h3>
+              </div>
+              <span className="badge-warning">Messages expire in 48h</span>
             </div>
 
-            <div className="messages-container">
+            <div className="messages-list">
               {messages.map(msg => {
                 const isMe = msg.senderId === currentUser.uid;
                 return (
-                  <div key={msg.id} className={`message-wrapper ${isMe ? 'mine' : 'theirs'}`}>
-                    {!isMe && <span className="message-sender">{msg.sender}</span>}
+                  <div key={msg.id} className={`message-row ${isMe ? 'message-own' : ''}`}>
                     <div className="message-bubble">
-                      {msg.text}
+                      {!isMe && <div className="message-sender">{msg.sender}</div>}
+                      <div className="message-text">{msg.text}</div>
+                      <div className="message-time">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                     </div>
-                    <span className="message-time">
-                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
                   </div>
                 );
               })}
-              {messages.length === 0 && (
-                <div className="empty-chat">
-                  <MessageSquare size={48} color="#e5e7eb" />
-                  <p>No messages yet. Start the conversation!</p>
-                </div>
-              )}
               <div ref={messagesEndRef} />
             </div>
 
-            <form className="chat-input-area" onSubmit={handleSendMessage}>
+            <form className="message-input-area" onSubmit={handleSendMessage}>
               <input
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
-                placeholder={`Message #${activeTeam.name}...`}
+                placeholder={`Message #${activeTeam.name}`}
               />
-              <button type="submit" className="btn btn-primary" disabled={!messageInput.trim()}>
+              <button type="submit" disabled={!messageInput.trim()}>
                 <Send size={18} />
               </button>
             </form>
           </>
         ) : (
           <div className="no-team-selected">
-            <MessageSquare size={64} color="var(--color-primary)" />
-            <h2>Select a Team</h2>
-            {teams.length > 0 ? (
-              <p>Choose a team from the sidebar to view chat</p>
-            ) : (
-              <p>Ask an admin to add you to a team first.</p>
-            )}
+            <MessageSquare size={48} color="#cbd5e1" />
+            <p>Select a team to start chatting</p>
           </div>
         )}
       </div>
 
       <style>{`
-        .chat-layout {
-          display: grid;
-          grid-template-columns: 280px 1fr;
-          gap: 1.5rem;
-          height: calc(100vh - 140px); /* Adjust for navbar and padding */
-        }
-        
-        @media (max-width: 768px) {
-          .chat-layout {
-            grid-template-columns: 1fr;
-          }
-          .teams-sidebar {
-            display: ${activeTeam ? 'none' : 'block'};
-          }
-          .chat-area {
-            display: ${activeTeam ? 'flex' : 'none'};
-            height: 80vh;
-          }
+        .teams-layout {
+          display: flex;
+          height: calc(100vh - 100px); /* Adjust based on navbar */
+          background: white;
+          border-radius: 12px;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+          overflow: hidden;
+          margin-top: 1rem;
         }
 
         .teams-sidebar {
+          width: 260px;
+          border-right: 1px solid #e5e7eb;
           display: flex;
           flex-direction: column;
-          height: 100%;
-          overflow: hidden;
-          padding: 0;
+          background: #f9fafb;
         }
 
         .sidebar-header {
-          padding: 1.5rem;
-          border-bottom: 1px solid #f3f4f6;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid #e5e7eb;
         }
-
-        .no-teams-msg {
+        
+        .team-list {
             padding: 1rem;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            font-style: italic;
-        }
-
-        .btn-icon-sm {
-          padding: 0.25rem;
-          border-radius: 4px;
-          color: var(--text-muted);
-        }
-        .btn-icon-sm:hover { background: #f3f4f6; color: var(--color-primary); }
-
-        .teams-list {
-          padding: 1rem;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
+            flex: 1;
+            overflow-y: auto;
         }
 
         .team-item {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          padding: 0.75rem;
-          border-radius: 8px;
-          cursor: pointer;
-          color: var(--text-muted);
-          font-weight: 500;
-          transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            color: #4b5563;
+            transition: all 0.2s;
+            margin-bottom: 0.25rem;
         }
-
         .team-item:hover {
-          background: #f9fafb;
-          color: var(--text-main);
+            background: #e5e7eb;
+        }
+        .team-item.active {
+            background: var(--color-primary-light);
+            color: var(--color-primary);
+            font-weight: 500;
         }
 
-        .team-item.active {
-          background: #fff0f0;
-          color: var(--color-primary);
+        .empty-teams {
+            text-align: center;
+            padding: 2rem 1rem;
+            color: #6b7280;
+            font-size: 0.9rem;
         }
 
         .chat-area {
-          display: flex;
-          flex-direction: column;
-          height: 100%;
-          padding: 0;
-          overflow: hidden;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
 
         .chat-header {
-          padding: 1rem 1.5rem;
-          border-bottom: 1px solid #f3f4f6;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: #fff;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
         }
 
-        .member-count {
-          color: #ef4444;
-          font-size: 0.75rem;
-          display: flex;
-          align-items: center;
-          gap: 0.4rem;
-          background: #fee2e2;
-          padding: 2px 6px;
-          border-radius: 4px;
+        .header-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
-        .messages-container {
-          flex: 1;
-          overflow-y: auto;
-          padding: 1.5rem;
-          background: #fdfdfd;
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
+        .badge-warning {
+            background: #fef3c7;
+            color: #d97706;
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-weight: 500;
         }
 
-        .message-wrapper {
-          display: flex;
-          flex-direction: column;
-          max-width: 70%;
+        .messages-list {
+            flex: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            background: #ffffff;
         }
 
-        .message-wrapper.mine {
-          align-self: flex-end;
-          align-items: flex-end;
+        .message-row {
+            display: flex;
         }
-
-        .message-wrapper.theirs {
-          align-self: flex-start;
-          align-items: flex-start;
-        }
-
-        .message-sender {
-          font-size: 0.75rem;
-          color: var(--text-muted);
-          margin-bottom: 0.25rem;
-          margin-left: 0.5rem;
+        .message-own {
+            justify-content: flex-end;
         }
 
         .message-bubble {
-          padding: 0.75rem 1rem;
-          border-radius: 12px;
-          position: relative;
-          line-height: 1.4;
+            max-width: 70%;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            background: #f3f4f6;
+            position: relative;
+        }
+        .message-own .message-bubble {
+            background: var(--color-primary);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        .message-row:not(.message-own) .message-bubble {
+            border-bottom-left-radius: 4px;
         }
 
-        .mine .message-bubble {
-          background: var(--color-primary);
-          color: white;
-          border-bottom-right-radius: 2px;
-        }
-
-        .theirs .message-bubble {
-          background: #f3f4f6;
-          color: var(--text-main);
-          border-bottom-left-radius: 2px;
+        .message-sender {
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: var(--color-primary);
         }
 
         .message-time {
-          font-size: 0.7rem;
-          color: #9ca3af;
-          margin-top: 0.25rem;
+            font-size: 0.65rem;
+            text-align: right;
+            margin-top: 0.25rem;
+            opacity: 0.7;
         }
 
-        .chat-input-area {
-          padding: 1rem;
-          background: #fff;
-          border-top: 1px solid #f3f4f6;
-          display: flex;
-          gap: 0.75rem;
+        .message-input-area {
+            padding: 1rem;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 0.5rem;
+            background: #f9fafb;
         }
 
-        .chat-input-area input {
-          flex: 1;
-          padding: 0.75rem 1rem;
-          border: 1px solid #e5e7eb;
-          border-radius: 99px;
-          outline: none;
+        .message-input-area input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            outline: none;
+        }
+        .message-input-area input:focus {
+            border-color: var(--color-primary);
         }
 
-        .chat-input-area input:focus {
-          border-color: var(--color-primary);
+        .message-input-area button {
+            background: var(--color-primary);
+            color: white;
+            border: none;
+            width: 44px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .message-input-area button:disabled {
+            background: #d1d5db;
+        }
+        .message-input-area button:hover:not(:disabled) {
+            opacity: 0.9;
         }
 
-        .no-team-selected, .empty-chat {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          height: 100%;
-          text-align: center;
-          color: var(--text-muted);
-          gap: 1rem;
+        .no-team-selected {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #9ca3af;
+            gap: 1rem;
         }
       `}</style>
     </div>
