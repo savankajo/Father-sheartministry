@@ -31,12 +31,15 @@ const Teams = () => {
         setUserTeams(myTeams);
 
         // Construct team objects based on strings
-        // In a real app, you might have a strict 'teams' collection
-        const teamObjects = myTeams.map(t => ({
-          id: t,
-          name: t,
-          members: [] // We don't need full member list for chat view
-        }));
+        // Handle case where team might be stored as object instead of string
+        const teamObjects = myTeams.map(t => {
+          const name = (typeof t === 'object' && t !== null) ? (t.name || 'Unknown') : String(t);
+          return {
+            id: name, // Unique enough for now
+            name: name,
+            members: []
+          };
+        });
 
         setTeams(teamObjects);
       }
