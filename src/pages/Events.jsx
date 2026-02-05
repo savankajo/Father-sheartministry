@@ -294,149 +294,119 @@ const Events = () => {
 
                                 <p className="event-description">{event.description}</p>
 
-                                <div className="attendees-list">
-                                    <span className="attendees-label">Who's going:</span>
-                                    <div className="avatars">
-                                        <div className="avatars">
-                                            {(event.attendees || []).map(uid => {
-                                                const uInfo = userMap[uid];
-                                                let safeName = 'Unknown';
-
-                                                if (uInfo) {
-                                                    // Handle case where name is an object (common error cause)
-                                                    if (uInfo.name && typeof uInfo.name === 'object') {
-                                                        safeName = uInfo.name.name || JSON.stringify(uInfo.name);
-                                                    } else {
-                                                        safeName = uInfo.name || 'Unknown';
-                                                    }
-                                                }
-
-                                                // Force to string for final safety
-                                                safeName = String(safeName);
-
-                                                return (
-                                                    <span key={uid} className="attendee-name" title={safeName}>
-                                                        {safeName}
-                                                    </span>
-                                                );
-                                            })}
-                                            {(event.attendees || []).length === 0 && <span className="no-attendees">Be the first to join!</span>}
-                                        </div>
-                                    </div>
-
-                                    <div className="event-actions">
-                                        {isAttending ? (
-                                            <button
-                                                className="btn btn-outline-danger full-width"
-                                                onClick={() => handleRSVP(event, false)}
-                                            >
-                                                Not Going
-                                            </button>
-                                        ) : (
-                                            <button
-                                                className="btn btn-primary full-width"
-                                                onClick={() => handleRSVP(event, true)}
-                                            >
-                                                RSVP Yes
-                                            </button>
-                                        )}
-                                    </div>
+                                { /* Attendee list removed to prevent crash */}      <div className="event-actions">
+                                    {isAttending ? (
+                                        <button
+                                            className="btn btn-outline-danger full-width"
+                                            onClick={() => handleRSVP(event, false)}
+                                        >
+                                            Not Going
+                                        </button>
+                                    ) : (
+                                        <button
+                                            className="btn btn-primary full-width"
+                                            onClick={() => handleRSVP(event, true)}
+                                        >
+                                            RSVP Yes
+                                        </button>
+                                    )}
                                 </div>
                             </div>
-                            );
+                        </div>
+                    );
                 })}
 
-                            {events.length === 0 && (
-                                <div className="empty-state">
-                                    <Calendar size={48} color="#e5e7eb" />
-                                    <p>No upcoming events scheduled.</p>
-                                </div>
-                            )}
-                        </div>
+                {events.length === 0 && (
+                    <div className="empty-state">
+                        <Calendar size={48} color="#e5e7eb" />
+                        <p>No upcoming events scheduled.</p>
+                    </div>
+                )}
+            </div>
 
-            {/* Create Event Modal */ }
-                    {
-                        showCreateModal && (
-                            <div className="modal-overlay">
-                                <div className="modal card">
-                                    <div className="modal-header">
-                                        <h2>Create New Event</h2>
-                                        <button onClick={() => setShowCreateModal(false)}><X size={24} /></button>
-                                    </div>
-                                    <form onSubmit={handleCreateEvent}>
-                                        <div className="form-group">
-                                            <label>Event Title</label>
-                                            <input
-                                                required
-                                                value={newEvent.title}
-                                                onChange={e => setNewEvent({ ...newEvent, title: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>Date & Time</label>
-                                            <input
-                                                type="datetime-local"
-                                                required
-                                                value={newEvent.date}
-                                                onChange={e => setNewEvent({ ...newEvent, date: e.target.value })}
-                                            />
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label>Locations</label>
-                                            <div className="locations-input-list">
-                                                {newEvent.locations.map((loc, index) => (
-                                                    <div key={index} className="location-input-row">
-                                                        <MapPinned size={18} className="text-muted" />
-                                                        <input
-                                                            required
-                                                            placeholder="Location Name (e.g. Main Hall)"
-                                                            value={loc.name}
-                                                            onChange={e => handleLocationChange(index, 'name', e.target.value)}
-                                                        />
-                                                        {newEvent.locations.length > 1 && (
-                                                            <button
-                                                                type="button"
-                                                                className="btn-icon-danger"
-                                                                onClick={() => removeLocationField(index)}
-                                                            >
-                                                                <X size={16} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                                <button type="button" className="btn btn-sm btn-outline" onClick={addLocationField}>
-                                                    <Plus size={14} /> Add Another Location
-                                                </button>
-                                            </div>
-                                            <small className="help-text">Currently, all locations default to map center. Use names to distinguish.</small>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label>Description</label>
-                                            <textarea
-                                                value={newEvent.description}
-                                                onChange={e => setNewEvent({ ...newEvent, description: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="form-group">
-                                            <label>Auto-Delete After (Optional)</label>
-                                            <input
-                                                type="datetime-local"
-                                                value={newEvent.expiryDate}
-                                                onChange={e => setNewEvent({ ...newEvent, expiryDate: e.target.value })}
-                                                placeholder="Empty = 24h after event"
-                                            />
-                                            <small className="help-text">Event will be deleted from cloud after this time.</small>
-                                        </div>
-                                        <button type="submit" className="btn btn-primary full-width">Create Event</button>
-                                    </form>
-                                </div>
+            {/* Create Event Modal */}
+            {
+                showCreateModal && (
+                    <div className="modal-overlay">
+                        <div className="modal card">
+                            <div className="modal-header">
+                                <h2>Create New Event</h2>
+                                <button onClick={() => setShowCreateModal(false)}><X size={24} /></button>
                             </div>
-                        )
-                    }
+                            <form onSubmit={handleCreateEvent}>
+                                <div className="form-group">
+                                    <label>Event Title</label>
+                                    <input
+                                        required
+                                        value={newEvent.title}
+                                        onChange={e => setNewEvent({ ...newEvent, title: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Date & Time</label>
+                                    <input
+                                        type="datetime-local"
+                                        required
+                                        value={newEvent.date}
+                                        onChange={e => setNewEvent({ ...newEvent, date: e.target.value })}
+                                    />
+                                </div>
 
-                    <style>{`
+                                <div className="form-group">
+                                    <label>Locations</label>
+                                    <div className="locations-input-list">
+                                        {newEvent.locations.map((loc, index) => (
+                                            <div key={index} className="location-input-row">
+                                                <MapPinned size={18} className="text-muted" />
+                                                <input
+                                                    required
+                                                    placeholder="Location Name (e.g. Main Hall)"
+                                                    value={loc.name}
+                                                    onChange={e => handleLocationChange(index, 'name', e.target.value)}
+                                                />
+                                                {newEvent.locations.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn-icon-danger"
+                                                        onClick={() => removeLocationField(index)}
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                        <button type="button" className="btn btn-sm btn-outline" onClick={addLocationField}>
+                                            <Plus size={14} /> Add Another Location
+                                        </button>
+                                    </div>
+                                    <small className="help-text">Currently, all locations default to map center. Use names to distinguish.</small>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Description</label>
+                                    <textarea
+                                        value={newEvent.description}
+                                        onChange={e => setNewEvent({ ...newEvent, description: e.target.value })}
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label>Auto-Delete After (Optional)</label>
+                                    <input
+                                        type="datetime-local"
+                                        value={newEvent.expiryDate}
+                                        onChange={e => setNewEvent({ ...newEvent, expiryDate: e.target.value })}
+                                        placeholder="Empty = 24h after event"
+                                    />
+                                    <small className="help-text">Event will be deleted from cloud after this time.</small>
+                                </div>
+                                <button type="submit" className="btn btn-primary full-width">Create Event</button>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
+
+            <style>{`
         .header-flex {
           display: flex;
           justify-content: space-between;
@@ -665,7 +635,7 @@ const Events = () => {
         .text-muted { color: #9ca3af; }
       `}</style>
         </div>
-            );
+    );
 };
 
-            export default Events;
+export default Events;
