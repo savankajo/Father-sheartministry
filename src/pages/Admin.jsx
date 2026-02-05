@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
-import { Trash2, UserPlus, ShieldAlert, Shield } from 'lucide-react';
+import { collection, onSnapshot, doc, deleteDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { Trash2, ShieldAlert, Shield, Plus, X } from 'lucide-react';
 
 const Admin = () => {
     const { isAdmin } = useAuth();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    // Available teams configuration
+    const AVAILABLE_TEAMS = ['Worship Team', 'Media Team', 'Greeting Team', 'Kids Ministry', 'Ushering'];
 
     useEffect(() => {
         if (!isAdmin) return;
@@ -45,6 +48,27 @@ const Admin = () => {
         }
     };
 
+    const handleAddTeam = async (uid, team) => {
+        if (!team) return;
+        try {
+            await updateDoc(doc(db, "users", uid), {
+                teams: arrayUnion(team)
+            });
+        } catch (error) {
+            console.error("Error adding team", error);
+        }
+    };
+
+    const handleRemoveTeam = async (uid, team) => {
+        try {
+            await updateDoc(doc(db, "users", uid), {
+                teams: arrayRemove(team)
+            });
+        } catch (error) {
+            console.error("Error removing team", error);
+        }
+    };
+
     return (
         <div className="animate-fade-in">
             <div className="header-flex">
@@ -54,7 +78,7 @@ const Admin = () => {
 
             <div className="card">
                 <h3>User Management</h3>
-                <p className="subtitle">Manage church members and their team assignments.</p>
+                <p className="subtitle">Manage church members and assign them to ministry teams.</p>
 
                 <div className="table-responsive">
                     <table className="admin-table">
@@ -72,10 +96,38 @@ const Admin = () => {
                                     <td><strong>{user.displayName}</strong></td>
                                     <td>{user.email}</td>
                                     <td>
-                                        <div className="tags">
-                                            {user.teams.map(team => (
-                                                <span key={team} className="tag">{team}</span>
-                                            ))}
+                                        <div className="teams-cell">
+                                            <div className="tags">
+                                                {(user.teams || []).map(team => (
+                                                    <span key={team} className="tag">
+                                                        {team}
+                                                        <button
+                                                            className="remove-tag-btn"
+                                                            onClick={() => handleRemoveTeam(user.uid, team)}
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <select
+                                                className="team-select"
+                                                onChange={(e) => {
+                                                    handleAddTeam(user.uid, e.target.value);
+                                                    e.target.value = ""; // Reset
+                                                }}
+                                            >
+                                                <option value="">+ Add Team</option>
+                                                {AVAILABLE_TEAMS.map(t => (
+                                                    <option
+                                                        key={t}
+                                                        value={t}
+                                                        disabled={(user.teams || []).includes(t)}
+                                                    >
+                                                        {t}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </div>
                                     </td>
                                     <td>
@@ -126,6 +178,13 @@ const Admin = () => {
         .admin-table td {
           padding: 1rem;
           border-bottom: 1px solid #f3f4f6;
+          vertical-align: top;
+        }
+
+        .teams-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
         }
 
         .tags {
@@ -140,6 +199,30 @@ const Admin = () => {
           border-radius: 4px;
           font-size: 0.85rem;
           color: var(--text-muted);
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+        }
+
+        .remove-tag-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px;
+            border-radius: 50%;
+            cursor: pointer;
+            color: #991b1b;
+        }
+        .remove-tag-btn:hover {
+            background: #fee2e2;
+        }
+
+        .team-select {
+            padding: 0.25rem;
+            border-radius: 4px;
+            border: 1px solid #e5e7eb;
+            font-size: 0.85rem;
+            max-width: 150px;
         }
 
         .btn-icon-danger {
