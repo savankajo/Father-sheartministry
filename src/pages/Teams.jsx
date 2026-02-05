@@ -1,150 +1,196 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { db } from '../firebase';
+import { collection, addDoc, query, where, orderBy, onSnapshot, getDocs, writeBatch } from 'firebase/firestore';
 import { MessageSquare, Send, Plus, Users, Hash } from 'lucide-react';
 
 const Teams = () => {
-    const { currentUser, isAdmin } = useAuth();
-    const [activeTeam, setActiveTeam] = useState(null);
-    const [messageInput, setMessageInput] = useState('');
+  const { currentUser, isAdmin } = useAuth();
+  const [activeTeam, setActiveTeam] = useState(null);
+  const [messageInput, setMessageInput] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [userTeams, setUserTeams] = useState([]);
 
-    // Mock Teams
-    const [teams, setTeams] = useState([
-        { id: 't1', name: 'Worship Team', members: [] },
-        { id: 't2', name: 'Media Team', members: [] },
-        { id: 't3', name: 'Greeting Team', members: [] }
-    ]);
+  const messagesEndRef = useRef(null);
 
-    // Mock Messages
-    // In real app, this would be a Firestore listener based on activeTeam.id
-    const [messages, setMessages] = useState({
-        't1': [
-            { id: 1, sender: 'Worship Leader', text: 'Practice is at 7pm!', timestamp: new Date(Date.now() - 3600000).toISOString() },
-            { id: 2, sender: 'Drummer', text: 'I will be there.', timestamp: new Date(Date.now() - 1800000).toISOString() }
-        ],
-        't2': [
-            { id: 1, sender: 'Admin', text: 'Who is running slides on Sunday?', timestamp: new Date(Date.now() - 90000000).toISOString() }
-        ],
-        't3': []
-    });
+  // 1. Fetch My Teams (from user profile) so we know what I can see
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, "users", currentUser.uid), (doc) => {
+      if (doc.exists()) {
+        const myTeams = doc.data().teams || [];
+        setUserTeams(myTeams);
 
-    const messagesEndRef = useRef(null);
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages, activeTeam]);
-
-    const handleSendMessage = (e) => {
-        e.preventDefault();
-        if (!messageInput.trim() || !activeTeam) return;
-
-        const newMessage = {
-            id: Date.now(),
-            sender: currentUser.displayName || currentUser.email,
-            text: messageInput,
-            timestamp: new Date().toISOString()
-        };
-
-        setMessages(prev => ({
-            ...prev,
-            [activeTeam.id]: [...(prev[activeTeam.id] || []), newMessage]
+        // Construct team objects based on strings
+        // In a real app, you might have a strict 'teams' collection
+        const teamObjects = myTeams.map(t => ({
+          id: t,
+          name: t,
+          members: [] // We don't need full member list for chat view
         }));
 
-        setMessageInput('');
+        setTeams(teamObjects);
+      }
+    });
+    return () => unsubscribe();
+  }, [currentUser.uid]);
+
+  // 2. Auto-Cleanup Old Messages (> 48h)
+  useEffect(() => {
+    const cleanupOldMessages = async () => {
+      const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+      const q = query(
+        collection(db, "messages"),
+        where("timestamp", "<", fortyEightHoursAgo)
+      );
+
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        console.log(`Cleaned up ${snapshot.size} old messages.`);
+      }
     };
 
-    const handleCreateTeam = () => {
-        const name = prompt("Enter new team name:");
-        if (name) {
-            const newTeam = { id: `t${Date.now()}`, name, members: [] };
-            setTeams([...teams, newTeam]);
-        }
-    };
+    cleanupOldMessages();
+  }, []);
 
-    return (
-        <div className="animate-fade-in chat-layout">
-            {/* Sidebar */}
-            <div className="teams-sidebar card">
-                <div className="sidebar-header">
-                    <h2>Teams</h2>
-                    {isAdmin && (
-                        <button className="btn-icon-sm" onClick={handleCreateTeam} title="Create Team">
-                            <Plus size={20} />
-                        </button>
-                    )}
-                </div>
+  // 3. Fetch Messages for Active Team
+  useEffect(() => {
+    if (!activeTeam) return;
 
-                <div className="teams-list">
-                    {teams.map(team => (
-                        <div
-                            key={team.id}
-                            className={`team-item ${activeTeam?.id === team.id ? 'active' : ''}`}
-                            onClick={() => setActiveTeam(team)}
-                        >
-                            <Hash size={18} />
-                            <span>{team.name}</span>
-                        </div>
-                    ))}
-                </div>
+    const q = query(
+      collection(db, "messages"),
+      where("teamId", "==", activeTeam.id),
+      orderBy("timestamp", "asc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setMessages(msgs);
+    });
+
+    return () => unsubscribe();
+  }, [activeTeam]);
+
+  // Scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!messageInput.trim() || !activeTeam) return;
+
+    try {
+      await addDoc(collection(db, "messages"), {
+        text: messageInput,
+        sender: currentUser.displayName || currentUser.email,
+        senderId: currentUser.uid,
+        teamId: activeTeam.id,
+        timestamp: new Date().toISOString()
+      });
+      setMessageInput('');
+    } catch (error) {
+      console.error("Error sending message:", error);
+    }
+  };
+
+  return (
+    <div className="animate-fade-in chat-layout">
+      {/* Sidebar */}
+      <div className="teams-sidebar card">
+        <div className="sidebar-header">
+          <h2>My Teams</h2>
+          {isAdmin && (
+            <button className="btn-icon-sm" title="Manage Teams in Admin Dashboard">
+              <Plus size={20} />
+            </button>
+          )}
+        </div>
+
+        <div className="teams-list">
+          {teams.length === 0 ? (
+            <p className="no-teams-msg">You are not in any teams yet.</p>
+          ) : (
+            teams.map(team => (
+              <div
+                key={team.id}
+                className={`team-item ${activeTeam?.id === team.id ? 'active' : ''}`}
+                onClick={() => setActiveTeam(team)}
+              >
+                <Hash size={18} />
+                <span>{team.name}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Chat Area */}
+      <div className="chat-area card">
+        {activeTeam ? (
+          <>
+            <div className="chat-header">
+              <h3>{activeTeam.name}</h3>
+              <span className="member-count">Messages expire in 48h</span>
             </div>
 
-            {/* Chat Area */}
-            <div className="chat-area card">
-                {activeTeam ? (
-                    <>
-                        <div className="chat-header">
-                            <h3>{activeTeam.name}</h3>
-                            <span className="member-count"><Users size={16} /> {activeTeam.members.length} members</span>
-                        </div>
-
-                        <div className="messages-container">
-                            {(messages[activeTeam.id] || []).map(msg => {
-                                const isMe = msg.sender === (currentUser.displayName || currentUser.email);
-                                return (
-                                    <div key={msg.id} className={`message-wrapper ${isMe ? 'mine' : 'theirs'}`}>
-                                        {!isMe && <span className="message-sender">{msg.sender}</span>}
-                                        <div className="message-bubble">
-                                            {msg.text}
-                                        </div>
-                                        <span className="message-time">
-                                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </span>
-                                    </div>
-                                );
-                            })}
-                            {(!messages[activeTeam.id] || messages[activeTeam.id].length === 0) && (
-                                <div className="empty-chat">
-                                    <MessageSquare size={48} color="#e5e7eb" />
-                                    <p>No messages yet. Start the conversation!</p>
-                                </div>
-                            )}
-                            <div ref={messagesEndRef} />
-                        </div>
-
-                        <form className="chat-input-area" onSubmit={handleSendMessage}>
-                            <input
-                                value={messageInput}
-                                onChange={(e) => setMessageInput(e.target.value)}
-                                placeholder={`Message #${activeTeam.name}...`}
-                            />
-                            <button type="submit" className="btn btn-primary" disabled={!messageInput.trim()}>
-                                <Send size={18} />
-                            </button>
-                        </form>
-                    </>
-                ) : (
-                    <div className="no-team-selected">
-                        <MessageSquare size={64} color="var(--color-primary)" />
-                        <h2>Select a Team</h2>
-                        <p>Choose a team from the sidebar to view chat</p>
+            <div className="messages-container">
+              {messages.map(msg => {
+                const isMe = msg.senderId === currentUser.uid;
+                return (
+                  <div key={msg.id} className={`message-wrapper ${isMe ? 'mine' : 'theirs'}`}>
+                    {!isMe && <span className="message-sender">{msg.sender}</span>}
+                    <div className="message-bubble">
+                      {msg.text}
                     </div>
-                )}
+                    <span className="message-time">
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                );
+              })}
+              {messages.length === 0 && (
+                <div className="empty-chat">
+                  <MessageSquare size={48} color="#e5e7eb" />
+                  <p>No messages yet. Start the conversation!</p>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
 
-            <style>{`
+            <form className="chat-input-area" onSubmit={handleSendMessage}>
+              <input
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                placeholder={`Message #${activeTeam.name}...`}
+              />
+              <button type="submit" className="btn btn-primary" disabled={!messageInput.trim()}>
+                <Send size={18} />
+              </button>
+            </form>
+          </>
+        ) : (
+          <div className="no-team-selected">
+            <MessageSquare size={64} color="var(--color-primary)" />
+            <h2>Select a Team</h2>
+            {teams.length > 0 ? (
+              <p>Choose a team from the sidebar to view chat</p>
+            ) : (
+              <p>Ask an admin to add you to a team first.</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <style>{`
         .chat-layout {
           display: grid;
           grid-template-columns: 280px 1fr;
@@ -179,6 +225,13 @@ const Teams = () => {
           display: flex;
           justify-content: space-between;
           align-items: center;
+        }
+
+        .no-teams-msg {
+            padding: 1rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-style: italic;
         }
 
         .btn-icon-sm {
@@ -236,11 +289,14 @@ const Teams = () => {
         }
 
         .member-count {
-          color: var(--text-muted);
-          font-size: 0.85rem;
+          color: #ef4444;
+          font-size: 0.75rem;
           display: flex;
           align-items: center;
           gap: 0.4rem;
+          background: #fee2e2;
+          padding: 2px 6px;
+          border-radius: 4px;
         }
 
         .messages-container {
@@ -332,8 +388,8 @@ const Teams = () => {
           gap: 1rem;
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 };
 
 export default Teams;
