@@ -1,15 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { db } from '../firebase';
+import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
 import { Trash2, UserPlus, ShieldAlert, Shield } from 'lucide-react';
 
 const Admin = () => {
     const { isAdmin } = useAuth();
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-    const [users, setUsers] = useState([
-        { uid: 'u1', email: 'john@example.com', displayName: 'John Doe', teams: ['Worship Team'] },
-        { uid: 'u2', email: 'jane@example.com', displayName: 'Jane Smith', teams: ['Media Team', 'Greeting Team'] },
-        { uid: 'u3', email: 'media@fathersheartministry.ca', displayName: 'Admin User', teams: ['Admin'] }
-    ]);
+    useEffect(() => {
+        if (!isAdmin) return;
+
+        const unsubscribe = onSnapshot(collection(db, "users"), (snapshot) => {
+            const usersList = snapshot.docs.map(doc => ({
+                uid: doc.id,
+                ...doc.data()
+            }));
+            setUsers(usersList);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [isAdmin]);
 
     if (!isAdmin) {
         return (
@@ -21,9 +34,14 @@ const Admin = () => {
         );
     }
 
-    const handleRemoveUser = (uid) => {
-        if (confirm("Are you sure you want to remove this user?")) {
-            setUsers(users.filter(u => u.uid !== uid));
+    const handleRemoveUser = async (uid) => {
+        if (confirm("Are you sure you want to remove this user? This cannot be undone.")) {
+            try {
+                await deleteDoc(doc(db, "users", uid));
+            } catch (error) {
+                console.error("Error removing user: ", error);
+                alert("Failed to remove user");
+            }
         }
     };
 
