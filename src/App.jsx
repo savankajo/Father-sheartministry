@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Navbar from './components/Navbar';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const ProtectedRoute = ({ children }) => {
   const { currentUser } = useAuth();
@@ -12,11 +13,8 @@ const ProtectedRoute = ({ children }) => {
 };
 
 import Roster from './pages/Roster';
-
 import Events from './pages/Events';
-
 import Teams from './pages/Teams';
-
 import Admin from './pages/Admin';
 
 function App() {
@@ -29,7 +27,9 @@ function App() {
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <Layout>
-                <Dashboard />
+                <ErrorBoundary>
+                  <Dashboard />
+                </ErrorBoundary>
               </Layout>
             </ProtectedRoute>
           } />
@@ -37,7 +37,9 @@ function App() {
           <Route path="/events" element={
             <ProtectedRoute>
               <Layout>
-                <Events />
+                <ErrorBoundary>
+                  <Events />
+                </ErrorBoundary>
               </Layout>
             </ProtectedRoute>
           } />
@@ -45,7 +47,9 @@ function App() {
           <Route path="/roster" element={
             <ProtectedRoute>
               <Layout>
-                <Roster />
+                <ErrorBoundary>
+                  <Roster />
+                </ErrorBoundary>
               </Layout>
             </ProtectedRoute>
           } />
@@ -53,7 +57,9 @@ function App() {
           <Route path="/teams" element={
             <ProtectedRoute>
               <Layout>
-                <Teams />
+                <ErrorBoundary>
+                  <Teams />
+                </ErrorBoundary>
               </Layout>
             </ProtectedRoute>
           } />
@@ -61,7 +67,9 @@ function App() {
           <Route path="/admin" element={
             <ProtectedRoute>
               <Layout>
-                <Admin />
+                <ErrorBoundary>
+                  <Admin />
+                </ErrorBoundary>
               </Layout>
             </ProtectedRoute>
           } />
