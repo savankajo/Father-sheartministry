@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../contexts/AuthContext';
-import { Calendar, MapPin, Users, Plus, X, Trash2 } from 'lucide-react';
+import { Calendar, MapPin, Users, Plus, X, Trash2, MapPinned } from 'lucide-react';
 import L from 'leaflet';
 import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, arrayUnion, arrayRemove, query, where, getDocs, writeBatch } from 'firebase/firestore';
@@ -29,10 +29,10 @@ const Events = () => {
     const [newEvent, setNewEvent] = useState({
         title: '',
         date: '',
-        location: '',
-        coordinates: [49.2827, -123.1207], // Default to Vancouver
         description: '',
-        expiryDate: '' // New field for cleanup
+        expiryDate: '',
+        // Array of { name: string, coordinates: [lat, lng] }
+        locations: [{ name: '', coordinates: [49.2827, -123.1207] }]
     });
 
     // 1. Fetch User Names for RSVP Display
@@ -97,20 +97,29 @@ const Events = () => {
                 expiry = eventDate.toISOString();
             }
 
+            // Filter out empty locations
+            const validLocations = newEvent.locations.filter(loc => loc.name.trim() !== '');
+            if (validLocations.length === 0) {
+                alert("Please add at least one location.");
+                return;
+            }
+
             await addDoc(collection(db, "events"), {
-                ...newEvent,
-                attendees: [], // Array of UIDs
-                createdBy: currentUser.uid,
-                expiryDate: expiry
+                title: newEvent.title,
+                date: newEvent.date,
+                description: newEvent.description,
+                expiryDate: expiry,
+                locations: validLocations, // Save array
+                attendees: [],
+                createdBy: currentUser.uid
             });
             setShowCreateModal(false);
             setNewEvent({
                 title: '',
                 date: '',
-                location: '',
-                coordinates: [49.2827, -123.1207],
                 description: '',
-                expiryDate: ''
+                expiryDate: '',
+                locations: [{ name: '', coordinates: [49.2827, -123.1207] }]
             });
         } catch (error) {
             console.error("Error creating event:", error);
@@ -141,6 +150,27 @@ const Events = () => {
         }
     };
 
+    // Location Management in Form
+    const handleLocationChange = (index, field, value) => {
+        const updatedLocations = [...newEvent.locations];
+        updatedLocations[index][field] = value;
+        setNewEvent({ ...newEvent, locations: updatedLocations });
+    };
+
+    const addLocationField = () => {
+        setNewEvent({
+            ...newEvent,
+            locations: [...newEvent.locations, { name: '', coordinates: [49.2827, -123.1207] }]
+        });
+    };
+
+    const removeLocationField = (index) => {
+        if (newEvent.locations.length > 1) {
+            const updatedLocations = newEvent.locations.filter((_, i) => i !== index);
+            setNewEvent({ ...newEvent, locations: updatedLocations });
+        }
+    };
+
     return (
         <div className="animate-fade-in">
             <div className="header-flex">
@@ -155,14 +185,24 @@ const Events = () => {
             <div className="events-grid">
                 {events.map(event => {
                     const isAttending = (event.attendees || []).includes(currentUser.uid);
+                    // Handle backward compatibility: old events have 'location' (string) and 'coordinates' (array)
+                    // New events have 'locations' (array of objects)
+                    const displayLocations = event.locations || [
+                        { name: event.location || 'Unknown Location', coordinates: event.coordinates || [49.2827, -123.1207] }
+                    ];
+
+                    const centerCoords = displayLocations[0]?.coordinates || [49.2827, -123.1207];
+
                     return (
                         <div key={event.id} className="card event-card">
                             <div className="event-map">
-                                <MapContainer center={event.coordinates} zoom={13} style={{ height: '100%', width: '100%' }}>
+                                <MapContainer center={centerCoords} zoom={13} style={{ height: '100%', width: '100%' }}>
                                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                                    <Marker position={event.coordinates}>
-                                        <Popup>{event.location}</Popup>
-                                    </Marker>
+                                    {displayLocations.map((loc, idx) => (
+                                        <Marker key={idx} position={loc.coordinates || centerCoords}>
+                                            <Popup>{loc.name}</Popup>
+                                        </Marker>
+                                    ))}
                                 </MapContainer>
                             </div>
 
@@ -181,10 +221,16 @@ const Events = () => {
                                         <Calendar size={16} />
                                         <span>{new Date(event.date).toLocaleString()}</span>
                                     </div>
-                                    <div className="info-item">
-                                        <MapPin size={16} />
-                                        <span>{event.location}</span>
+
+                                    <div className="locations-list">
+                                        {displayLocations.map((loc, idx) => (
+                                            <div key={idx} className="info-item location-item">
+                                                <MapPin size={16} />
+                                                <span>{loc.name}</span>
+                                            </div>
+                                        ))}
                                     </div>
+
                                     <div className="info-item">
                                         <Users size={16} />
                                         <span>{(event.attendees || []).length} Going</span>
@@ -261,14 +307,37 @@ const Events = () => {
                                     onChange={e => setNewEvent({ ...newEvent, date: e.target.value })}
                                 />
                             </div>
+
                             <div className="form-group">
-                                <label>Location Name</label>
-                                <input
-                                    required
-                                    value={newEvent.location}
-                                    onChange={e => setNewEvent({ ...newEvent, location: e.target.value })}
-                                />
+                                <label>Locations</label>
+                                <div className="locations-input-list">
+                                    {newEvent.locations.map((loc, index) => (
+                                        <div key={index} className="location-input-row">
+                                            <MapPinned size={18} className="text-muted" />
+                                            <input
+                                                required
+                                                placeholder="Location Name (e.g. Main Hall)"
+                                                value={loc.name}
+                                                onChange={e => handleLocationChange(index, 'name', e.target.value)}
+                                            />
+                                            {newEvent.locations.length > 1 && (
+                                                <button
+                                                    type="button"
+                                                    className="btn-icon-danger"
+                                                    onClick={() => removeLocationField(index)}
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button type="button" className="btn btn-sm btn-outline" onClick={addLocationField}>
+                                        <Plus size={14} /> Add Another Location
+                                    </button>
+                                </div>
+                                <small className="help-text">Currently, all locations default to map center. Use names to distinguish.</small>
                             </div>
+
                             <div className="form-group">
                                 <label>Description</label>
                                 <textarea
@@ -341,6 +410,12 @@ const Events = () => {
           font-size: 0.9rem;
         }
 
+        .locations-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
         .info-item {
           display: flex;
           align-items: center;
@@ -405,6 +480,17 @@ const Events = () => {
 
         .btn-icon-danger {
             color: #ef4444;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-icon-danger:hover {
+            background: #fee2e2;
+            border-radius: 4px;
         }
 
         .modal-overlay {
@@ -448,11 +534,39 @@ const Events = () => {
             border: 1px solid #e5e7eb;
             border-radius: 6px;
         }
+
+        .locations-input-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .location-input-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
         
         .help-text {
             font-size: 0.75rem;
             color: var(--text-muted);
         }
+        
+        .btn-sm {
+            font-size: 0.8rem;
+            padding: 0.4rem 0.8rem;
+            width: fit-content;
+            margin-top: 0.5rem;
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px dashed var(--color-primary);
+            color: var(--color-primary);
+        }
+        .btn-outline:hover {
+            background: #f0fdfa;
+        }
+        .text-muted { color: #9ca3af; }
       `}</style>
         </div>
     );
