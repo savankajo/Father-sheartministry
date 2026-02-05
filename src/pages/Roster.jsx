@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { format, startOfWeek, addDays } from 'date-fns';
-import { CheckCircle, Circle, UserPlus, Lock } from 'lucide-react';
+import { CheckCircle, Circle, UserPlus, Lock, Plus, Trash2 } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, onSnapshot, doc, updateDoc, setDoc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, setDoc, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
 
 const Roster = () => {
-    const { currentUser } = useAuth();
+    const { currentUser, isAdmin } = useAuth();
     // Default to upcoming Sunday
     const [selectedDate, setSelectedDate] = useState(() => {
         const today = new Date();
@@ -144,6 +144,49 @@ const Roster = () => {
         }
     };
 
+    const handleCreateService = async () => {
+        if (!confirm("Create a new Sunday Service for the upcoming Sunday?")) return;
+
+        try {
+            const nextSunday = new Date();
+            nextSunday.setDate(nextSunday.getDate() + (7 - nextSunday.getDay()) % 7);
+            nextSunday.setHours(10, 0, 0, 0);
+
+            // Simple check to avoid duplicate date logic could be added here
+            // But for now, we just create it.
+
+            await addDoc(collection(db, "services"), {
+                date: nextSunday.toISOString(),
+                type: 'Sunday Service',
+                roles: {
+                    'Worship Leader': null,
+                    'Keys': null,
+                    'Drums': null,
+                    'Guitar': null,
+                    'Vocals': null,
+                    'Media/ProPresenter': null,
+                    'Livestream': null,
+                    'Sound': null,
+                    'Greeter': null,
+                    'Usher': null,
+                    'Kids Teacher': null
+                }
+            });
+        } catch (error) {
+            console.error("Error creating service:", error);
+            alert("Failed to create service.");
+        }
+    };
+
+    const handleDeleteService = async (serviceId) => {
+        if (!confirm("Are you sure you want to delete this service?")) return;
+        try {
+            await deleteDoc(doc(db, "services", serviceId));
+        } catch (error) {
+            console.error("Error deleting service:", error);
+        }
+    };
+
     return (
         <div className="animate-fade-in">
             <div className="header-flex">
@@ -154,11 +197,32 @@ const Roster = () => {
             </div>
 
             <div className="roster-grid">
+                {/* Admin Create Service Button */}
+                {isAdmin && (
+                    <div className="admin-actions">
+                        <button className="btn btn-primary" onClick={handleCreateService}>
+                            <Plus size={16} /> Create Service (Next Sunday)
+                        </button>
+                        <p className="text-sm text-muted">Auto-creates a service for the upcoming Sunday.</p>
+                    </div>
+                )}
+
                 {services.map(service => (
                     <div key={service.id} className="card roster-card">
                         <div className="card-header">
-                            <h2>{service.type}</h2>
-                            <span className="badge">{format(new Date(service.date), 'eeee, h:mm a')}</span>
+                            <div>
+                                <h2>{service.type}</h2>
+                                <span className="badge">{format(new Date(service.date), 'eeee, h:mm a')}</span>
+                            </div>
+                            {isAdmin && (
+                                <button
+                                    className="btn-icon-danger"
+                                    onClick={() => handleDeleteService(service.id)}
+                                    title="Delete Service"
+                                >
+                                    <Trash2 size={18} />
+                                </button>
+                            )}
                         </div>
 
                         <div className="roles-list">
@@ -226,6 +290,13 @@ const Roster = () => {
           justify-content: space-between;
           align-items: center;
           margin-bottom: 2rem;
+        }
+
+        .admin-actions {
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
         
         .sub-text { color: var(--text-muted); font-weight: 500; }
